@@ -173,9 +173,13 @@ class Store:
     def __init__(self, path: Path | str):
         if str(path) != ":memory:":
             Path(path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(path), check_same_thread=False)
+        # Wait for locks instead of failing: the service and `python -m assistant check/chat`
+        # can open the database at the same moment.
+        self._conn = sqlite3.connect(str(path), check_same_thread=False, timeout=30)
         self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA busy_timeout=30000")
+        if self._conn.execute("PRAGMA journal_mode").fetchone()[0].lower() != "wal":
+            self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.executescript(SCHEMA)
         for table, column, decl in MIGRATIONS:

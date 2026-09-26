@@ -36,25 +36,28 @@ async def serve() -> None:
 
     app = create_app(settings, store, agent, notifier)
     server = uvicorn.Server(uvicorn.Config(app, host=settings.web_host, port=settings.web_port, log_level="info"))
-    tasks = [
+    # If any of these stop, the service exits and systemd restarts it.
+    critical = [
         asyncio.create_task(server.serve()),
         asyncio.create_task(scheduler.run()),
         asyncio.create_task(coach.run()),
     ]
 
+    discord_task = None
     if settings.discord_token and settings.discord_owner_id:
         from .discord_bot import DiscordBot
 
         bot = DiscordBot(settings, store, agent)
         notifier.add_sink(bot.send_reminder)
         notifier.add_message_sink(bot.send_message)
-        tasks.append(asyncio.create_task(bot.start(settings.discord_token)))
+        # Discord is optional: if it fails, the web UI and reminders keep working.
+        discord_task = asyncio.create_task(bot.run_forever(settings.discord_token))
     else:
         log.info("Discord not configured; reminders will only show in the web UI.")
 
     log.info("%s is up: http://%s:%s  (model %s)", settings.assistant_name, settings.web_host, settings.web_port, settings.model)
-    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-    for t in pending:
+    done, pending = await asyncio.wait(critical, return_when=asyncio.FIRST_COMPLETED)
+    for t in [*pending, *([discord_task] if discord_task else [])]:
         t.cancel()
     for t in done:
         t.result()  # surface the exception that stopped us, if any

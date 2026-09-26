@@ -4,6 +4,7 @@ It ignores everyone except DISCORD_OWNER_ID.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import timedelta
 from typing import List, Optional
@@ -18,6 +19,7 @@ from .timeparse import format_local
 log = logging.getLogger(__name__)
 
 DISCORD_LIMIT = 2000
+READY_TIMEOUT = 30  # seconds to wait for Discord before giving up on one delivery
 
 
 def split_message(text: str, limit: int = DISCORD_LIMIT) -> List[str]:
@@ -55,9 +57,43 @@ class DiscordBot(discord.Client):
         self.settings = settings
         self.store = store
         self.agent = agent
+        self.disabled = False  # set when login fails for good (bad token etc.)
 
     async def on_ready(self) -> None:
         log.info("Discord bot logged in as %s", self.user)
+
+    async def run_forever(self, token: str) -> None:
+        """Run the bot without ever taking the rest of the service down with it."""
+        try:
+            await self.start(token)
+        except discord.LoginFailure:
+            log.error("Discord login failed: DISCORD_TOKEN in .env is wrong. Reset the token in the Discord "
+                      "developer portal, paste it into .env, and restart. The web UI keeps working meanwhile.")
+        except discord.PrivilegedIntentsRequired:
+            log.error("Discord rejected the bot's intents. The web UI keeps working meanwhile.")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("Discord bot stopped. The web UI keeps working; restart the service to retry Discord.")
+        self.disabled = True
+        try:
+            if not self.is_closed():
+                await self.close()
+        except Exception:
+            pass  # a client that never logged in can't always close cleanly
+
+    async def _wait_connected(self) -> bool:
+        """Wait (briefly) for the connection; never block reminders on a dead bot."""
+        if self.disabled:
+            return False
+        if self.is_ready():
+            return True
+        try:
+            await asyncio.wait_for(self.wait_until_ready(), READY_TIMEOUT)
+            return True
+        except (asyncio.TimeoutError, RuntimeError):
+            log.warning("Discord isn't connected; skipping this Discord delivery")
+            return False
 
     async def _owner(self) -> discord.User:
         return self.get_user(self.settings.discord_owner_id) or await self.fetch_user(self.settings.discord_owner_id)
@@ -76,8 +112,8 @@ class DiscordBot(discord.Client):
             await message.channel.send(chunk)
 
     async def send_reminder(self, r: Reminder, late: bool) -> bool:
-        if not self.is_ready():
-            await self.wait_until_ready()
+        if not await self._wait_connected():
+            return False
         owner = await self._owner()
         header = "⏰ **Reminder**" + (" *(late - I was offline)*" if late else "")
         body = f"{header}\n{r.text}"
@@ -91,8 +127,8 @@ class DiscordBot(discord.Client):
 
     async def send_message(self, text: str, kind: str, reminder_id: Optional[int] = None) -> None:
         """Proactive check-ins and follow-ups."""
-        if not self.is_ready():
-            await self.wait_until_ready()
+        if not await self._wait_connected():
+            return
         owner = await self._owner()
         chunks = split_message(text)
         for i, chunk in enumerate(chunks):

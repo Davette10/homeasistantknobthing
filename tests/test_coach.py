@@ -330,3 +330,42 @@ def test_format_weather_and_pick_place():
               {"name": "Portland", "admin1": "Maine", "country": "United States"}]
     assert pick_place(places, "Portland, ME")["admin1"] == "Maine"
     assert pick_place(places, "Portland")["admin1"] == "Oregon"
+
+
+# --- Discord failures never take the service down ------------------------------
+
+def test_bad_discord_token_disables_bot_without_hanging(tmp_path):
+    import discord
+
+    from assistant.db import Store as _Store
+    from assistant.discord_bot import DiscordBot
+
+    s = Settings(discord_token="bad", discord_owner_id=1, db_path=tmp_path / "d.db")
+    st = _Store(s.db_path)
+    bot = DiscordBot(s, st, Agent(s, st, client=DownOllama()))
+
+    async def bad_start(token):
+        raise discord.LoginFailure("Improper token has been passed.")
+
+    bot.start = bad_start
+
+    async def run():
+        await bot.run_forever("bad")  # returns instead of raising
+        r = st.add_reminder("x", now_utc())
+        return await asyncio.wait_for(bot.send_reminder(r, False), 2)  # doesn't hang
+
+    assert asyncio.run(run()) is False
+    assert bot.disabled
+
+
+def test_store_waits_for_locks(tmp_path):
+    path = tmp_path / "l.db"
+    Store(path)
+    other = sqlite3.connect(path, check_same_thread=False)
+    other.execute("BEGIN EXCLUSIVE")
+
+    import threading
+    t = threading.Timer(0.5, other.rollback)
+    t.start()
+    Store(path)  # would raise "database is locked" without the busy timeout
+    t.join()
