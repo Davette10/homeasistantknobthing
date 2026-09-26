@@ -1,0 +1,18 @@
+# Template: install.sh fills in __USER__ and __DIR__ and installs this as
+# /etc/systemd/system/assistant.service
+[Unit]
+Description=Personal AI assistant (web UI + Discord + reminders)
+After=network-online.target ollama.service
+Wants=network-online.target ollama.service
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__DIR__
+ExecStart=__DIR__/.venv/bin/python -m assistant
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

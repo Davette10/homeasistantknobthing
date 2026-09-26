@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Assistant</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/icon.svg">
+  <link rel="manifest" href="/static/manifest.webmanifest">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <!-- Login -->
+  <section id="login" class="login" hidden>
+    <form id="login-form" class="login-card">
+      <div class="orb orb-lg" aria-hidden="true"></div>
+      <h1 id="login-title">Welcome back</h1>
+      <p class="muted">Your private assistant, running at home.</p>
+      <input id="password" type="password" placeholder="Password" autocomplete="current-password" required autofocus>
+      <button class="btn-primary" type="submit">Unlock</button>
+      <p id="login-error" class="error" role="alert"></p>
+    </form>
+  </section>
+
+  <!-- App -->
+  <div id="app" class="app" hidden>
+    <header class="topbar">
+      <div class="brand">
+        <div class="orb" aria-hidden="true"></div>
+        <div>
+          <div id="brand-name" class="brand-name">Assistant</div>
+          <div class="status"><span id="status-dot" class="dot"></span><span id="status-text">connecting…</span></div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button id="panel-toggle" class="icon-btn" title="Reminders, lists &amp; memory" aria-label="Open panel">
+          <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+          <span id="badge" class="badge" hidden></span>
+        </button>
+        <div class="menu-wrap">
+          <button id="menu-btn" class="icon-btn" aria-label="Menu">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="19" r="1.4"/></svg>
+          </button>
+          <div id="menu" class="menu" hidden>
+            <button data-action="notify">Enable browser notifications</button>
+            <button data-action="clear">Clear chat history</button>
+            <button data-action="logout">Log out</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="chat">
+        <div id="messages" class="messages" aria-live="polite">
+          <div id="empty" class="empty">
+            <div class="orb orb-lg" aria-hidden="true"></div>
+            <h2 id="greeting">Hey!</h2>
+            <p class="muted">I can set reminders, keep your lists, remember things about you, and help you come up with ideas.</p>
+            <div class="chips">
+              <button class="chip">Remind me in 20 minutes to check the oven</button>
+              <button class="chip">Every weekday at 8am remind me to take my vitamins</button>
+              <button class="chip">Add eggs and milk to groceries</button>
+              <button class="chip">Give me some ideas for this weekend</button>
+            </div>
+          </div>
+        </div>
+        <form id="composer" class="composer">
+          <textarea id="input" rows="1" placeholder="Message…" autocomplete="off" enterkeyhint="send"></textarea>
+          <button id="send" class="send" type="submit" aria-label="Send" disabled>
+            <svg viewBox="0 0 24 24"><path d="M5 12h13M12 5l7 7-7 7"/></svg>
+          </button>
+        </form>
+      </section>
+
+      <div id="scrim" class="scrim" hidden></div>
+      <aside id="panel" class="panel" aria-label="Reminders, lists and memory">
+        <div class="tabs" role="tablist">
+          <button class="tab active" data-tab="reminders" role="tab">Reminders</button>
+          <button class="tab" data-tab="todos" role="tab">Lists</button>
+          <button class="tab" data-tab="memory" role="tab">Memory</button>
+          <button id="panel-close" class="icon-btn panel-close" aria-label="Close panel">
+            <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+
+        <div class="tab-body" data-body="reminders">
+          <form class="quick-add" id="reminder-form">
+            <input name="text" placeholder="Remind me to…" required>
+            <input name="when" placeholder="when? e.g. tomorrow 9am" required>
+            <button class="btn-primary sm" type="submit">Add</button>
+          </form>
+          <p id="reminder-error" class="error"></p>
+          <ul id="reminder-list" class="list"></ul>
+          <div id="recent-wrap" hidden>
+            <h4 class="section-label">Recently sent</h4>
+            <ul id="recent-list" class="list"></ul>
+          </div>
+        </div>
+
+        <div class="tab-body" data-body="todos" hidden>
+          <form class="quick-add row" id="todo-form">
+            <input name="text" placeholder="Add an item…" required>
+            <input name="list" placeholder="list" list="list-names" class="narrow">
+            <datalist id="list-names"></datalist>
+            <button class="btn-primary sm" type="submit">Add</button>
+          </form>
+          <div id="todo-groups"></div>
+          <button id="clear-done" class="link-btn" hidden>Clear completed</button>
+        </div>
+
+        <div class="tab-body" data-body="memory" hidden>
+          <form class="quick-add row" id="memory-form">
+            <input name="fact" placeholder="Something to remember about you…" required>
+            <button class="btn-primary sm" type="submit">Save</button>
+          </form>
+          <p class="muted small">Things I've learned about you. I use these to personalize reminders and ideas.</p>
+          <ul id="memory-list" class="list"></ul>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <div id="toasts" class="toasts" aria-live="assertive"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
