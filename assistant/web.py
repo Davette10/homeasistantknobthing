@@ -16,10 +16,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .agent import Agent
+from .coach import MODES, CheckinConfig
 from .config import Settings
 from .db import Store, now_utc
 from .scheduler import Notifier
-from .timeparse import TimeParseError, format_local, parse_recurrence, parse_when
+from .timeparse import TimeParseError, format_day, format_local, parse_day, parse_recurrence, parse_when
 
 STATIC = Path(__file__).parent / "static"
 COOKIE = "assistant_session"
@@ -51,6 +52,30 @@ class ReminderBody(BaseModel):
 
 class SnoozeBody(BaseModel):
     minutes: int = 10
+
+
+class GoalBody(BaseModel):
+    title: str
+    target: Optional[str] = None
+    why: Optional[str] = None
+
+
+class StepBody(BaseModel):
+    text: str
+    due: Optional[str] = None
+
+
+class StatusBody(BaseModel):
+    status: str
+
+
+class CheckinBody(BaseModel):
+    mode: str
+    morning: str
+    midday: str
+    evening: str
+    quiet_hours: str
+    weather_location: str = ""
 
 
 def create_app(settings: Settings, store: Store, agent: Agent, notifier: Notifier) -> FastAPI:
@@ -263,5 +288,90 @@ def create_app(settings: Settings, store: Store, agent: Agent, notifier: Notifie
     async def delete_memory(mid: int):
         store.delete_memory(mid)
         return {"ok": True}
+
+    # --- goals ---------------------------------------------------------------
+
+    def goal_json(g):
+        return {
+            "id": g.id, "title": g.title, "why": g.why, "status": g.status,
+            "target": format_day(g.target_at, tz) if g.target_at else None,
+            "done": g.done_count, "total": len(g.steps),
+            "notes": g.notes.splitlines()[-3:] if g.notes else [],
+            "steps": [
+                {"id": st.id, "text": st.text, "done": st.done,
+                 "due": format_day(st.due_at, tz) if st.due_at else None,
+                 "overdue": bool(st.due_at and not st.done and st.due_at.astimezone(tz).date() < now_utc().astimezone(tz).date())}
+                for st in g.steps
+            ],
+        }
+
+    def parse_optional(text: Optional[str]):
+        if not text or not text.strip():
+            return None
+        try:
+            return parse_day(text, tz)
+        except TimeParseError as e:
+            raise HTTPException(400, str(e))
+
+    @app.get("/api/goals", dependencies=auth)
+    async def goals():
+        return [goal_json(g) for g in store.list_goals(include_closed=True)]
+
+    @app.post("/api/goals", dependencies=auth)
+    async def add_goal(body: GoalBody):
+        if not body.title.strip():
+            raise HTTPException(400, "empty goal")
+        return goal_json(store.add_goal(body.title.strip(), body.why, parse_optional(body.target)))
+
+    @app.post("/api/goals/{gid}/status", dependencies=auth)
+    async def goal_status(gid: int, body: StatusBody):
+        if body.status not in ("active", "done", "dropped"):
+            raise HTTPException(400, "bad status")
+        g = store.set_goal_status(gid, body.status)
+        if g is None:
+            raise HTTPException(404, "no such goal")
+        return goal_json(g)
+
+    @app.delete("/api/goals/{gid}", dependencies=auth)
+    async def delete_goal(gid: int):
+        store.delete_goal(gid)
+        return {"ok": True}
+
+    @app.post("/api/goals/{gid}/steps", dependencies=auth)
+    async def add_step(gid: int, body: StepBody):
+        if not body.text.strip():
+            raise HTTPException(400, "empty step")
+        if store.add_goal_step(gid, body.text.strip(), parse_optional(body.due)) is None:
+            raise HTTPException(404, "no such goal")
+        return goal_json(store.get_goal(gid))
+
+    @app.post("/api/steps/{sid}/toggle", dependencies=auth)
+    async def toggle_step(sid: int):
+        st = store.get_step(sid)
+        if st is None:
+            raise HTTPException(404, "no such step")
+        store.set_step_done(sid, not st.done)
+        return goal_json(store.get_goal(st.goal_id))
+
+    @app.delete("/api/steps/{sid}", dependencies=auth)
+    async def delete_step(sid: int):
+        store.delete_step(sid)
+        return {"ok": True}
+
+    # --- check-in settings ---------------------------------------------------
+
+    @app.get("/api/checkins", dependencies=auth)
+    async def get_checkins():
+        cfg = CheckinConfig.load(store, settings)
+        return {**cfg.__dict__, "modes": list(MODES)}
+
+    @app.put("/api/checkins", dependencies=auth)
+    async def put_checkins(body: CheckinBody):
+        cfg = CheckinConfig(**body.model_dump() if hasattr(body, "model_dump") else body.dict())
+        try:
+            cfg.save(store)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return {**cfg.__dict__, "modes": list(MODES)}
 
     return app

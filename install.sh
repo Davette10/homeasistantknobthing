@@ -92,6 +92,8 @@ if [[ ! -f .env ]]; then
   set_env ASSISTANT_NAME "${NAME:-Juno}"
   read -rp "  What's your first name? (optional) " UNAME
   set_env USER_NAME "$UNAME"
+  read -rp "  Your city, for weather in the morning brief (e.g. Boston, MA, optional): " CITY
+  set_env WEATHER_LOCATION "$CITY"
   while true; do
     read -rsp "  Choose a password for the web UI: " PW; echo
     [[ ${#PW} -ge 6 ]] && break

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 from datetime import timedelta
-from typing import List
+from typing import List, Optional
 
 import discord
 
@@ -88,6 +88,16 @@ class DiscordBot(discord.Client):
             body += f"\n-# repeats {r.recurrence.describe()} · next {nxt}"
         await owner.send(body, view=reminder_view(r.id))
         return True
+
+    async def send_message(self, text: str, kind: str, reminder_id: Optional[int] = None) -> None:
+        """Proactive check-ins and follow-ups."""
+        if not self.is_ready():
+            await self.wait_until_ready()
+        owner = await self._owner()
+        chunks = split_message(text)
+        for i, chunk in enumerate(chunks):
+            last = i == len(chunks) - 1
+            await owner.send(chunk, view=reminder_view(reminder_id) if last and reminder_id else None)
 
     async def on_interaction(self, interaction: discord.Interaction) -> None:
         cid = (interaction.data or {}).get("custom_id", "") if interaction.data else ""

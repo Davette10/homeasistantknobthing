@@ -15,17 +15,31 @@ TICK_SECONDS = 10
 LATE_AFTER = timedelta(minutes=5)
 
 Sink = Callable[[Reminder, bool], Awaitable[bool]]
+MessageSink = Callable[[str, str, Optional[int]], Awaitable[None]]
 
 
 class Notifier:
-    """Delivers a fired reminder to every registered sink (Discord DM, web push events)."""
+    """Delivers reminders and proactive messages to Discord and any open web UI tabs."""
 
     def __init__(self):
         self.sinks: List[Sink] = []
+        self.message_sinks: List[MessageSink] = []
         self.web_queues: Set[asyncio.Queue] = set()
 
     def add_sink(self, sink: Sink) -> None:
         self.sinks.append(sink)
+
+    def add_message_sink(self, sink: MessageSink) -> None:
+        self.message_sinks.append(sink)
+
+    async def message(self, text: str, kind: str, reminder_id: Optional[int] = None) -> None:
+        """A message the assistant starts on its own (check-in, brief, follow-up)."""
+        self.publish_web({"type": "message", "text": text, "kind": kind, "reminder_id": reminder_id})
+        for sink in self.message_sinks:
+            try:
+                await sink(text, kind, reminder_id)
+            except Exception:
+                log.exception("message sink failed (%s)", kind)
 
     def subscribe_web(self) -> asyncio.Queue:
         q: asyncio.Queue = asyncio.Queue(maxsize=100)

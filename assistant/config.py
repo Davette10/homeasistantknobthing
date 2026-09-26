@@ -41,6 +41,16 @@ class Settings:
     discord_token: str = ""
     discord_owner_id: Optional[int] = None
 
+    # Proactive check-ins. These are defaults; the web UI can override them (stored in the DB).
+    coach_mode: str = "coach"  # off | light | balanced | coach
+    morning_time: str = "08:00"
+    midday_time: str = "13:00"
+    evening_time: str = "20:30"
+    quiet_hours: str = "22:00-07:30"
+
+    weather_location: str = ""  # e.g. "Boston, MA"; used for the morning brief and the weather tool
+    searxng_url: str = ""  # optional self-hosted search; DuckDuckGo is used otherwise
+
     db_path: Path = ROOT / "data" / "assistant.db"
     persona_path: Path = ROOT / "persona.md"
 
@@ -75,6 +85,13 @@ def load_settings(env_file: Optional[Path] = None) -> Settings:
         secret_key=env("SECRET_KEY", ""),
         discord_token=env("DISCORD_TOKEN", "").strip(),
         discord_owner_id=int(owner) if owner.isdigit() else None,
+        coach_mode=env("COACH_MODE", "coach").strip().lower() or "coach",
+        morning_time=env("MORNING_TIME", "08:00").strip(),
+        midday_time=env("MIDDAY_TIME", "13:00").strip(),
+        evening_time=env("EVENING_TIME", "20:30").strip(),
+        quiet_hours=env("QUIET_HOURS", "22:00-07:30").strip(),
+        weather_location=env("WEATHER_LOCATION", "").strip(),
+        searxng_url=env("SEARXNG_URL", "").strip().rstrip("/"),
         db_path=Path(env("DB_PATH", str(ROOT / "data" / "assistant.db"))),
         persona_path=Path(env("PERSONA_FILE", str(ROOT / "persona.md"))),
     )

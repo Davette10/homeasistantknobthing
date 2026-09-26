@@ -96,8 +96,18 @@ def test_recurrence_parsing_variants():
 
 # --- tools --------------------------------------------------------------------
 
+class SyncToolbox:
+    """Calls the async toolbox synchronously, to keep the tests readable."""
+
+    def __init__(self, store, settings):
+        self.tb = Toolbox(store, settings)
+
+    def run(self, name, args):
+        return asyncio.run(self.tb.run(name, args))
+
+
 def test_tools_roundtrip(store, settings):
-    tb = Toolbox(store, settings)
+    tb = SyncToolbox(store, settings)
     out = tb.run("set_reminder", {"text": "call mom", "when": "in 2 hours"})
     assert out.startswith("Reminder #1 set")
     assert "call mom" in tb.run("list_reminders", {})
@@ -117,7 +127,7 @@ def test_tools_roundtrip(store, settings):
 
 
 def test_tools_errors_are_messages(store, settings):
-    tb = Toolbox(store, settings)
+    tb = SyncToolbox(store, settings)
     assert tb.run("nope", {}).startswith("Error")
     assert tb.run("set_reminder", {"text": "x"}).startswith("Error")
     assert tb.run("set_reminder", {"text": "x", "when": "blorp"}).startswith("Error")

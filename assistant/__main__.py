@@ -13,6 +13,7 @@ import sys
 import uvicorn
 
 from .agent import Agent
+from .coach import Coach
 from .config import load_settings
 from .db import Store
 from .scheduler import Notifier, Scheduler
@@ -27,6 +28,7 @@ async def serve() -> None:
     agent = Agent(settings, store)
     notifier = Notifier()
     scheduler = Scheduler(store, settings, notifier)
+    coach = Coach(store, settings, agent, notifier)
 
     health = await agent.client.health()
     if not health["ok"]:
@@ -34,13 +36,18 @@ async def serve() -> None:
 
     app = create_app(settings, store, agent, notifier)
     server = uvicorn.Server(uvicorn.Config(app, host=settings.web_host, port=settings.web_port, log_level="info"))
-    tasks = [asyncio.create_task(server.serve()), asyncio.create_task(scheduler.run())]
+    tasks = [
+        asyncio.create_task(server.serve()),
+        asyncio.create_task(scheduler.run()),
+        asyncio.create_task(coach.run()),
+    ]
 
     if settings.discord_token and settings.discord_owner_id:
         from .discord_bot import DiscordBot
 
         bot = DiscordBot(settings, store, agent)
         notifier.add_sink(bot.send_reminder)
+        notifier.add_message_sink(bot.send_message)
         tasks.append(asyncio.create_task(bot.start(settings.discord_token)))
     else:
         log.info("Discord not configured; reminders will only show in the web UI.")

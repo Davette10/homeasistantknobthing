@@ -46,6 +46,7 @@
             <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="19" r="1.4"/></svg>
           </button>
           <div id="menu" class="menu" hidden>
+            <button data-action="checkins">Check-in settings</button>
             <button data-action="notify">Enable browser notifications</button>
             <button data-action="clear">Clear chat history</button>
             <button data-action="logout">Log out</button>
@@ -60,12 +61,12 @@
           <div id="empty" class="empty">
             <div class="orb orb-lg" aria-hidden="true"></div>
             <h2 id="greeting">Hey!</h2>
-            <p class="muted">I can set reminders, keep your lists, remember things about you, and help you come up with ideas.</p>
+            <p class="muted">I can set reminders, keep your lists, turn goals into plans, look things up, and check in on you.</p>
             <div class="chips">
               <button class="chip">Remind me in 20 minutes to check the oven</button>
-              <button class="chip">Every weekday at 8am remind me to take my vitamins</button>
               <button class="chip">Add eggs and milk to groceries</button>
-              <button class="chip">Give me some ideas for this weekend</button>
+              <button class="chip">Help me make a plan to run a 5K</button>
+              <button class="chip">What's the weather this weekend?</button>
             </div>
           </div>
         </div>
@@ -82,6 +83,7 @@
         <div class="tabs" role="tablist">
           <button class="tab active" data-tab="reminders" role="tab">Reminders</button>
           <button class="tab" data-tab="todos" role="tab">Lists</button>
+          <button class="tab" data-tab="goals" role="tab">Goals</button>
           <button class="tab" data-tab="memory" role="tab">Memory</button>
           <button id="panel-close" class="icon-btn panel-close" aria-label="Close panel">
             <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
@@ -113,6 +115,15 @@
           <button id="clear-done" class="link-btn" hidden>Clear completed</button>
         </div>
 
+        <div class="tab-body" data-body="goals" hidden>
+          <form class="quick-add row" id="goal-form">
+            <input name="title" placeholder="New goal… (or just tell me in chat)" required>
+            <button class="btn-primary sm" type="submit">Add</button>
+          </form>
+          <p class="muted small">Tell me a goal in chat and I'll build a step-by-step plan and check in on you.</p>
+          <div id="goal-list"></div>
+        </div>
+
         <div class="tab-body" data-body="memory" hidden>
           <form class="quick-add row" id="memory-form">
             <input name="fact" placeholder="Something to remember about you…" required>
@@ -124,6 +135,36 @@
       </aside>
     </main>
   </div>
+
+  <dialog id="checkins" class="dialog">
+    <form id="checkin-form" method="dialog">
+      <h3>Check-ins</h3>
+      <p class="muted small">How often I reach out on my own. Reminders you set always come through.</p>
+      <label class="field">Style
+        <select name="mode">
+          <option value="coach">Coach: morning, midday &amp; evening check-ins, follow-ups, goal nudges</option>
+          <option value="balanced">Balanced: morning brief, evening check-in, follow-ups</option>
+          <option value="light">Light: morning brief and follow-ups</option>
+          <option value="off">Off: only reminders</option>
+        </select>
+      </label>
+      <div class="grid3">
+        <label class="field">Morning brief<input name="morning" type="time" required></label>
+        <label class="field">Midday nudge<input name="midday" type="time" required></label>
+        <label class="field">Evening check-in<input name="evening" type="time" required></label>
+      </div>
+      <div class="grid2">
+        <label class="field">Quiet from<input name="quiet_start" type="time"></label>
+        <label class="field">until<input name="quiet_end" type="time"></label>
+      </div>
+      <label class="field">Weather for the morning brief<input name="weather_location" placeholder="City, e.g. Boston, MA"></label>
+      <p id="checkin-error" class="error"></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn-ghost" value="cancel" id="checkin-cancel">Cancel</button>
+        <button type="submit" class="btn-primary sm" value="save">Save</button>
+      </div>
+    </form>
+  </dialog>
 
   <div id="toasts" class="toasts" aria-live="assertive"></div>
   <script src="/static/app.js"></script>

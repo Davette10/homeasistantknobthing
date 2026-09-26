@@ -105,7 +105,7 @@ function addMessage(role, text, opts = {}) {
   $("#empty").hidden = true;
   const wrap = document.createElement("div");
   wrap.className = `msg ${role === "user" ? "user" : "bot"}`;
-  const via = opts.source === "discord" ? " · via Discord" : "";
+  const via = opts.source === "discord" ? " · via Discord" : opts.source === "checkin" ? " · check-in" : "";
   if (role === "user") {
     wrap.innerHTML = `<div><div class="bubble"></div><div class="meta">${fmtTime(opts.at)}${via}</div></div>`;
     $(".bubble", wrap).textContent = text;
@@ -115,6 +115,7 @@ function addMessage(role, text, opts = {}) {
     $(".bubble", wrap).innerHTML = text ? markdown(text) : '<span class="typing"><i></i><i></i><i></i></span>';
     if (!$(".tools", wrap).children.length) $(".tools", wrap).hidden = true;
   }
+  if (opts.source === "checkin") wrap.classList.add("checkin");
   messagesEl.appendChild(wrap);
   scrollDown(true);
   return wrap;
@@ -298,8 +299,72 @@ async function loadMemories() {
   }
 }
 
+async function loadGoals() {
+  const goals = await api("/api/goals");
+  const box = $("#goal-list");
+  box.replaceChildren();
+  if (!goals.length) box.appendChild(el("div", "empty-note", "No goals yet. Try “help me make a plan to run a 5K”."));
+  for (const g of goals) {
+    const card = el("div", "goal" + (g.status !== "active" ? " closed" : ""));
+    const head = el("div", "goal-head");
+    const title = el("div", "goal-title", g.title);
+    const meta = el("div", "sub", [
+      g.status === "done" ? "🎉 completed" : g.status === "dropped" ? "dropped" : `${g.done}/${g.total} steps`,
+      g.target && g.status === "active" ? `target ${g.target}` : "",
+    ].filter(Boolean).join(" · "));
+    const titleWrap = el("div", "body"); titleWrap.append(title, meta);
+    const menu = el("select", "goal-menu");
+    menu.setAttribute("aria-label", "Goal actions");
+    const actions = g.status === "active" ? [["done", "Mark complete"], ["dropped", "Drop goal"]] : [["active", "Reactivate"]];
+    for (const [v, label] of [["", "⋯"], ...actions, ["delete", "Delete"]]) {
+      const o = el("option", "", label); o.value = v; menu.appendChild(o);
+    }
+    menu.addEventListener("change", async () => {
+      const v = menu.value; menu.value = "";
+      if (v === "delete") { if (confirm(`Delete “${g.title}” and its plan?`)) await api(`/api/goals/${g.id}`, { method: "DELETE" }); }
+      else if (v) await api(`/api/goals/${g.id}/status`, { body: { status: v } });
+      loadGoals();
+    });
+    head.append(titleWrap, menu);
+    const bar = el("div", "progress");
+    const fill = el("span"); fill.style.width = g.total ? `${Math.round((g.done / g.total) * 100)}%` : "0%";
+    bar.appendChild(fill);
+    card.append(head, bar);
+
+    const ul = el("ul", "list steps");
+    for (const st of g.steps) {
+      const li = el("li", "item" + (st.done ? " done" : ""));
+      const cb = el("input", "check"); cb.type = "checkbox"; cb.checked = st.done;
+      cb.addEventListener("change", async () => { await api(`/api/steps/${st.id}/toggle`, { method: "POST" }); loadGoals(); });
+      const body = el("div", "body"); body.appendChild(el("div", "title", st.text));
+      if (st.due && !st.done) body.appendChild(el("div", "sub" + (st.overdue ? " overdue" : ""), (st.overdue ? "overdue · " : "") + st.due));
+      li.append(cb, body, removeBtn(async () => { await api(`/api/steps/${st.id}`, { method: "DELETE" }); loadGoals(); }));
+      ul.appendChild(li);
+    }
+    card.appendChild(ul);
+    if (g.status === "active") {
+      const add = el("form", "step-add");
+      const inp = el("input"); inp.placeholder = "Add a step…"; inp.required = true;
+      const due = el("input", "narrow"); due.placeholder = "when?";
+      add.append(inp, due);
+      add.addEventListener("submit", async e => {
+        e.preventDefault();
+        try { await api(`/api/goals/${g.id}/steps`, { body: { text: inp.value, due: due.value || null } }); loadGoals(); }
+        catch (err) { toast({ head: "Couldn't add step", text: err.message }); }
+      });
+      card.appendChild(add);
+    }
+    if (g.notes.length) {
+      const notes = el("div", "goal-notes");
+      for (const n of g.notes) notes.appendChild(el("div", "", "📝 " + n));
+      card.appendChild(notes);
+    }
+    box.appendChild(card);
+  }
+}
+
 function refreshPanel() {
-  return Promise.all([loadReminders(), loadTodos(), loadMemories()]).catch(() => {});
+  return Promise.all([loadReminders(), loadTodos(), loadGoals(), loadMemories()]).catch(() => {});
 }
 
 function setTab(tab) {
@@ -342,6 +407,13 @@ $("#memory-form").addEventListener("submit", async e => {
   await api("/api/memories", { body: { fact } });
   loadMemories();
 });
+$("#goal-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const title = e.target.title.value;
+  e.target.reset();
+  await api("/api/goals", { body: { title } });
+  loadGoals();
+});
 $("#clear-done").addEventListener("click", async () => { await api("/api/todos/clear-done", { method: "POST" }); loadTodos(); });
 
 // ---------- Menu ----------
@@ -353,10 +425,48 @@ $("#menu").addEventListener("click", async e => {
   if (action === "clear" && confirm("Clear the chat history? Reminders, lists and memories are kept.")) {
     await api("/api/history", { method: "DELETE" }); loadHistory();
   }
+  if (action === "checkins") openCheckins();
   if (action === "notify" && "Notification" in window) {
     const p = await Notification.requestPermission();
     toast({ head: "Notifications", text: p === "granted" ? "Browser notifications are on for this device." : "Notifications were blocked." });
   }
+});
+
+// ---------- Check-in settings ----------
+const dialog = $("#checkins");
+async function openCheckins() {
+  const cfg = await api("/api/checkins");
+  const f = $("#checkin-form");
+  f.mode.value = cfg.mode;
+  f.morning.value = cfg.morning; f.midday.value = cfg.midday; f.evening.value = cfg.evening;
+  const [qs, qe] = (cfg.quiet_hours || "-").split("-");
+  f.quiet_start.value = qs || ""; f.quiet_end.value = qe || "";
+  f.weather_location.value = cfg.weather_location || "";
+  $("#checkin-error").textContent = "";
+  syncCheckinFields();
+  dialog.showModal();
+}
+function syncCheckinFields() {
+  const f = $("#checkin-form"), mode = f.mode.value;
+  f.midday.disabled = mode !== "coach";
+  f.evening.disabled = mode === "light" || mode === "off";
+  f.morning.disabled = mode === "off";
+}
+$("#checkin-form").mode.addEventListener("change", syncCheckinFields);
+$("#checkin-cancel").addEventListener("click", () => dialog.close());
+$("#checkin-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const f = e.target;
+  const quiet = f.quiet_start.value && f.quiet_end.value ? `${f.quiet_start.value}-${f.quiet_end.value}` : "";
+  try {
+    await api("/api/checkins", {
+      method: "PUT",
+      body: { mode: f.mode.value, morning: f.morning.value, midday: f.midday.value, evening: f.evening.value,
+              quiet_hours: quiet, weather_location: f.weather_location.value.trim() },
+    });
+    dialog.close();
+    toast({ head: "Check-ins", text: "Saved ✓" });
+  } catch (err) { $("#checkin-error").textContent = err.message; }
 });
 
 // ---------- Live reminder events ----------
@@ -385,6 +495,15 @@ function connectEvents() {
   es.onmessage = e => {
     const ev = JSON.parse(e.data);
     if (ev.type === "changed") { refreshPanel(); return; }
+    if (ev.type === "message") {
+      if (!state.busy) addMessage("bot", ev.text, { source: "checkin" });
+      else setTimeout(() => addMessage("bot", ev.text, { source: "checkin" }), 1500);
+      if ("Notification" in window && Notification.permission === "granted" && document.hidden) {
+        const n = new Notification(state.name, { body: ev.text.replace(/[*_~`]/g, "").slice(0, 180), tag: `msg-${ev.kind}` });
+        n.onclick = () => { window.focus(); n.close(); };
+      }
+      return;
+    }
     if (ev.type !== "reminder") return;
     const t = toast({
       head: `⏰ Reminder · ${ev.when}${ev.late ? " (late)" : ""}`,
@@ -439,7 +558,7 @@ async function start() {
   $("#login-title").textContent = `Hi, I'm ${me.name}`;
   $("#greeting").textContent = `${greeting()}${me.user ? ", " + me.user : ""}!`;
   $$(".empty .muted")[0].textContent =
-    `I'm ${me.name}. I can set reminders${me.discord ? " (sent to your Discord)" : ""}, keep your lists, remember things about you, and help you come up with ideas.`;
+    `I'm ${me.name}. I can set reminders${me.discord ? " (sent to your Discord)" : ""}, keep your lists, turn goals into plans, look things up, and check in on you.`;
   if (me.authed) start(); else showLogin();
   setInterval(() => { if (!$("#app").hidden) checkHealth(); }, 60000);
 })();

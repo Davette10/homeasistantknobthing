@@ -150,6 +150,34 @@ def parse_when(text: str, tz: ZoneInfo, now: Optional[datetime] = None) -> datet
     return dt.astimezone(UTC).replace(microsecond=0)
 
 
+def parse_day(text: str, tz: ZoneInfo, now: Optional[datetime] = None) -> datetime:
+    """Day-level date for goal steps and targets: "today" means today even at 5pm.
+
+    Returns 9am local on that day, as UTC.
+    """
+    local = (now or datetime.now(UTC)).astimezone(tz)
+    midnight = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    dt = parse_when(text, tz, now=midnight).astimezone(tz)
+    return dt.replace(hour=DEFAULT_HOUR, minute=0, second=0).astimezone(UTC)
+
+
+def format_day(dt_utc: datetime, tz: ZoneInfo, now: Optional[datetime] = None) -> str:
+    """'today', 'tomorrow', 'Friday', 'Sat Oct 10' - no clock time."""
+    local = dt_utc.astimezone(tz).date()
+    today = (now or datetime.now(UTC)).astimezone(tz).date()
+    delta = (local - today).days
+    if delta == 0:
+        return "today"
+    if delta == 1:
+        return "tomorrow"
+    if delta == -1:
+        return "yesterday"
+    if 1 < delta < 7:
+        return dt_utc.astimezone(tz).strftime("%A")
+    fmt = "%a %b %d" if local.year == today.year else "%a %b %d %Y"
+    return dt_utc.astimezone(tz).strftime(fmt).replace(" 0", " ")
+
+
 def _add_days_local(dt: datetime, days: int, tz: ZoneInfo) -> datetime:
     """Add days keeping the same wall-clock time across DST changes."""
     naive = dt.astimezone(tz).replace(tzinfo=None) + timedelta(days=days)
