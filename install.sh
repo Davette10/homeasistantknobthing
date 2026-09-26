@@ -117,8 +117,12 @@ if [[ ! -f .env ]]; then
 else
   info ".env already exists, keeping it"
 fi
+if [[ -z "$(get_env DEPLOY_SECRET)" ]]; then
+  set_env DEPLOY_SECRET "$(python3 -c 'import secrets; print(secrets.token_hex(20))')"
+  info "Generated a secret for the rebuild webhook (DEPLOY_SECRET in .env)"
+fi
 MODEL="$(get_env MODEL)"; MODEL="${MODEL:-qwen3:4b}"
-PORT="$(get_env WEB_PORT)"; PORT="${PORT:-8080}"
+PORT="$(get_env WEB_PORT)"; PORT="${PORT:-8765}"
 
 # ---------------------------------------------------------------- python
 bold "5/6 Installing the assistant"
@@ -146,3 +150,5 @@ info "Open  http://${IP:-<jetson-ip>}:${PORT}  on your phone or computer (same W
 info "Logs:     journalctl -u assistant -f"
 info "Restart:  sudo systemctl restart assistant"
 info "Terminal chat:  .venv/bin/python -m assistant chat"
+info "Rebuild from anywhere on your network:"
+info "  curl -X POST -H \"Authorization: Bearer \$(grep ^DEPLOY_SECRET= .env | cut -d= -f2)\" http://${IP:-<jetson-ip>}:$(get_env DEPLOY_PORT || echo 8766)/hooks/deploy"

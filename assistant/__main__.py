@@ -35,10 +35,17 @@ async def serve() -> None:
         log.warning("Ollama check failed: %s (will keep retrying on each message)", health["error"])
 
     app = create_app(settings, store, agent, notifier)
-    server = uvicorn.Server(uvicorn.Config(app, host=settings.web_host, port=settings.web_port, log_level="info"))
+    config = uvicorn.Config(app, host=settings.web_host, port=settings.web_port, log_level="info")
+    server = uvicorn.Server(config)
+    sockets = [config.bind_socket()]
+    if settings.deploy_secret:
+        # Second listening port for the rebuild webhook only (see deploy.py).
+        hook_config = uvicorn.Config(app, host=settings.web_host, port=settings.deploy_port)
+        sockets.append(hook_config.bind_socket())
+        log.info("Rebuild webhook on port %s: POST /hooks/deploy", settings.deploy_port)
     # If any of these stop, the service exits and systemd restarts it.
     critical = [
-        asyncio.create_task(server.serve()),
+        asyncio.create_task(server.serve(sockets=sockets)),
         asyncio.create_task(scheduler.run()),
         asyncio.create_task(coach.run()),
     ]

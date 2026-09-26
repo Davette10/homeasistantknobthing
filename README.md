@@ -14,7 +14,7 @@ A personal AI agent in the spirit of Meta's Muse, running **entirely on your own
 Its name and personality are yours to change. The default is a friendly, casual coach.
 
 ```
- Phone / laptop ──► Web UI (http://jetson:8080) ─┐
+ Phone / laptop ──► Web UI (http://jetson:8765) ─┐
                                                  ├─► Assistant service ──► Ollama (qwen3:4b on the GPU)
  Discord app ◄──► Discord bot (DMs) ─────────────┘        │
       ▲                                                   ├─► SQLite: reminders, lists, goals, memories, chat
@@ -40,7 +40,7 @@ The installer:
 3. Creates a Python venv, installs dependencies, and downloads the model (`qwen3:4b`, ~2.5GB).
 4. Installs a `systemd` service, so it starts on boot and restarts if it crashes.
 
-When it finishes, open **`http://<jetson-ip>:8080`** on your phone or computer (same Wi-Fi) and log in.
+When it finishes, open **`http://<jetson-ip>:8765`** on your phone or computer (same Wi-Fi) and log in.
 
 > 📱 **Tip:** On your phone, use *Share → Add to Home Screen* (iPhone) or *⋮ → Add to Home screen* (Android). It then opens like a normal app.
 
@@ -115,7 +115,7 @@ Everything lives in `.env` (created by the installer, and documented in `.env.ex
 | `MODEL` | `qwen3:4b` | See "Choosing a model" below |
 | `NUM_CTX` | `8192` | Context window (tokens) |
 | `THINK` | `false` | Let qwen3 reason before answering. Smarter but slow on a Jetson |
-| `WEB_PORT` | `8080` | |
+| `WEB_PORT` | `8765` | |
 | `WEB_PASSWORD` | – | Required for the web UI |
 | `DISCORD_TOKEN`, `DISCORD_OWNER_ID` | – | Optional, see above |
 | `COACH_MODE`, `MORNING_TIME`, `MIDDAY_TIME`, `EVENING_TIME`, `QUIET_HOURS` | coach, 08:00, 13:00, 20:30, 22:00-07:30 | Starting values; editable in the web app |
@@ -168,11 +168,38 @@ sudo systemctl restart assistant            # restart after changing .env / pers
 git pull && ./install.sh                    # update (safe to re-run, keeps your .env and data)
 ```
 
+### Rebuild webhook (update without SSH)
+
+`POST /hooks/deploy` pulls the latest code for the current branch, installs any new packages, and restarts the service. It needs `DEPLOY_SECRET` from `.env` (the installer generates one) and listens on its own port, **8766**, which serves nothing but `/hooks/*`.
+
+```bash
+# From any computer on your network
+curl -X POST -H "Authorization: Bearer <DEPLOY_SECRET>" http://<jetson-ip>:8766/hooks/deploy
+
+# Did it work? (shows the last update's output)
+curl -H "Authorization: Bearer <DEPLOY_SECRET>" http://<jetson-ip>:8766/hooks/deploy
+```
+
+**Automatic updates on every `git push`:** GitHub has to be able to reach the Jetson, so expose *only* the webhook port with [ngrok](https://ngrok.com) (a free account includes one fixed domain):
+
+```bash
+ngrok config add-authtoken <your-ngrok-token>
+ngrok http 8766 --url https://<your-name>.ngrok-free.app
+```
+
+Then in GitHub: **repo → Settings → Webhooks → Add webhook**:
+- Payload URL: `https://<your-name>.ngrok-free.app/hooks/deploy`
+- Content type: `application/json`
+- Secret: your `DEPLOY_SECRET`
+- Events: *Just the push event*
+
+GitHub sends a test "ping" right away, and it should show a green check ✓. Pushes to other branches are ignored. A failed update keeps the old version running. See `data/deploy.log` for details.
+
 **Your data** lives in `data/assistant.db` (one SQLite file). Back it up by copying it.
 
 ### Using it away from home
 
-The web UI is only reachable on your home network, which is the safe default. Discord works anywhere. If you want the web UI on the go too, install [Tailscale](https://tailscale.com) on the Jetson and your phone, then open `http://<jetson-tailscale-name>:8080`. Don't port-forward it to the open internet.
+The web UI is only reachable on your home network, which is the safe default. Discord works anywhere. If you want the web UI on the go too, install [Tailscale](https://tailscale.com) on the Jetson and your phone, then open `http://<jetson-tailscale-name>:8765`. Don't port-forward it to the open internet.
 
 ---
 
@@ -202,6 +229,7 @@ assistant/
   scheduler.py    fires due reminders every 10s; fans messages out to Discord + web
   discord_bot.py  DM chat + reminder buttons
   web.py          FastAPI: login, chat streaming, REST for the side panel, SSE for live reminders
+  deploy.py       rebuild webhook (git pull + restart), GitHub-signature aware
   db.py           SQLite storage
   static/         the web app (plain HTML/CSS/JS, no build step)
 persona.md        personality prompt

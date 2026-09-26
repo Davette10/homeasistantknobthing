@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -19,6 +19,7 @@ from .agent import Agent
 from .coach import MODES, CheckinConfig
 from .config import Settings
 from .db import Store, now_utc
+from .deploy import Deployer, create_hook_router
 from .scheduler import Notifier
 from .timeparse import TimeParseError, format_day, format_local, parse_day, parse_recurrence, parse_when
 
@@ -78,9 +79,20 @@ class CheckinBody(BaseModel):
     weather_location: str = ""
 
 
-def create_app(settings: Settings, store: Store, agent: Agent, notifier: Notifier) -> FastAPI:
+def create_app(settings: Settings, store: Store, agent: Agent, notifier: Notifier,
+               deployer: Optional[Deployer] = None) -> FastAPI:
     app = FastAPI(title=settings.assistant_name, docs_url=None, redoc_url=None)
     tz = settings.tz
+
+    app.include_router(create_hook_router(settings, deployer or Deployer(settings)))
+
+    @app.middleware("http")
+    async def hooks_only_on_deploy_port(request: Request, call_next):
+        # The deploy port may be exposed to the internet for GitHub; it must serve nothing but /hooks.
+        server = request.scope.get("server") or (None, None)
+        if server[1] == settings.deploy_port and not request.url.path.startswith("/hooks/"):
+            return JSONResponse({"detail": "not found"}, status_code=404)
+        return await call_next(request)
     failed_logins = {"count": 0, "until": 0.0}
 
     # --- sessions ------------------------------------------------------------

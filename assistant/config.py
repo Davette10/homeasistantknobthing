@@ -34,7 +34,7 @@ class Settings:
     history_messages: int = 16
 
     web_host: str = "0.0.0.0"
-    web_port: int = 8080
+    web_port: int = 8765
     web_password: str = ""
     secret_key: str = ""
 
@@ -50,6 +50,10 @@ class Settings:
 
     weather_location: str = ""  # e.g. "Boston, MA"; used for the morning brief and the weather tool
     searxng_url: str = ""  # optional self-hosted search; DuckDuckGo is used otherwise
+
+    # Rebuild webhook: POST /hooks/deploy pulls the latest code and restarts. Off unless a secret is set.
+    deploy_secret: str = ""
+    deploy_port: int = 8766  # serves only /hooks/*, so it's safe to expose (e.g. via ngrok) for GitHub
 
     db_path: Path = ROOT / "data" / "assistant.db"
     persona_path: Path = ROOT / "persona.md"
@@ -80,7 +84,7 @@ def load_settings(env_file: Optional[Path] = None) -> Settings:
         think=_bool(env("THINK"), False),
         history_messages=int(env("HISTORY_MESSAGES", "16")),
         web_host=env("WEB_HOST", "0.0.0.0"),
-        web_port=int(env("WEB_PORT", "8080")),
+        web_port=int(env("WEB_PORT", "8765")),
         web_password=env("WEB_PASSWORD", ""),
         secret_key=env("SECRET_KEY", ""),
         discord_token=env("DISCORD_TOKEN", "").strip(),
@@ -92,6 +96,8 @@ def load_settings(env_file: Optional[Path] = None) -> Settings:
         quiet_hours=env("QUIET_HOURS", "22:00-07:30").strip(),
         weather_location=env("WEATHER_LOCATION", "").strip(),
         searxng_url=env("SEARXNG_URL", "").strip().rstrip("/"),
+        deploy_secret=env("DEPLOY_SECRET", "").strip(),
+        deploy_port=int(env("DEPLOY_PORT", "8766")),
         db_path=Path(env("DB_PATH", str(ROOT / "data" / "assistant.db"))),
         persona_path=Path(env("PERSONA_FILE", str(ROOT / "persona.md"))),
     )
